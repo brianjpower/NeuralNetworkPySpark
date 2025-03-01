@@ -7,6 +7,9 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.utils import to_categorical
 import numpy as np
+from pyspark.sql import Row
+from pyspark.ml.linalg import DenseVector
+
 
 # Step 1: Initialize PySpark Session
 spark = SparkSession.builder \
@@ -51,10 +54,23 @@ def spark_df_to_numpy(df, features_col, label_col):
     y = np.array(y)  # Labels as numpy array
     return X, y
 
+def spark_df_to_numpy_distributed(df, features_col, label_col):
+    # Convert each row to NumPy-compatible tuple
+    numpy_rdd = df.select(features_col, label_col).rdd.map(
+        lambda row: (
+            np.array(row[features_col].toArray()),  # Features
+            row[label_col]  # Label
+        )
+    )
+    # Collect as a list of NumPy arrays and split them into X and y
+    numpy_data = numpy_rdd.collect()
+    X, y = zip(*numpy_data)  # Unpack tuples
+    return np.array(X), np.array(y)  # Convert list to final array
+
 
 # Convert train and test sets to NumPy arrays
-X_train, y_train = spark_df_to_numpy(train, "scaled_features", "label")
-X_test, y_test = spark_df_to_numpy(test, "scaled_features", "label")
+X_train, y_train = spark_df_to_numpy_distributed(train, "scaled_features", "label")
+X_test, y_test = spark_df_to_numpy_distributed(test, "scaled_features", "label")
 
 # Convert labels to one-hot encoding for TensorFlow
 y_train = to_categorical(y_train)
